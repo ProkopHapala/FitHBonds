@@ -39,6 +39,13 @@
 *.out
 *.app
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+
 # Build directories
 build/
 Build/
@@ -52,11 +59,18 @@ Makefile
 install_manifest.txt
 compile_commands.json
 
+# IDE / editor
+.vscode/
+.idea/
+*.iml
+
 # Temporary files
 *.tmp
 *.log
 *.bak
 *.swp
+*~
+.DS_Store
 
 # vcpkg
 vcpkg_installed/
@@ -67,3 +81,7 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Large reference data files (not versioned)
+tests/tFitREQ/wb97m_input/
+tests/tFitREQ/wb97m_output/
