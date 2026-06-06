@@ -160,6 +160,9 @@ FitHBonds/
 │   ├── wb97m_input/             # 203 dimer scan files
 │   ├── dofSelection_*.dat       # DOF bounds
 │   └── *.py                     # test scripts
+├── tests/RigidAtomHfunc/        # rigid atom angular function tests
+│   ├── plot_H2O_sp3.py          # visualize sp3 hybrid orbitals of water
+│   └── h2o_sp3_viewer.html      # WebGL interactive viewer for water sp3 orbitals
 └── doc/status.md                # detailed status & known issues
 ```
 

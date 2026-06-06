@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H2O sp3 Lone Pair Viewer - WebGL</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .canvas-container {
+            flex: 1;
+            min-width: 400px;
+            max-width: 500px;
+        }
+        .canvas-wrapper {
+            position: relative;
+            width: 100%;
+            padding-bottom: 100%; /* Square aspect ratio */
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 1px solid #444;
+            border-radius: 8px;
+        }
+        .atom-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .controls {
+            flex: 0 0 300px;
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .control-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        .value {
+            color: #4CAF50;
+            font-family: monospace;
+        }
+        .checkbox-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        .checkbox-group label {
+            font-weight: normal;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        h2 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+        .info {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>H2O sp3 Lone Pair Visualization (WebGL)</h1>
+    <div class="container">
+        <div class="canvas-container">
+            <h2>XY Plane (Molecular Plane)</h2>
+            <div class="canvas-wrapper">
+                <canvas id="canvasXY"></canvas>
+                <canvas id="atomsXY" class="atom-overlay"></canvas>
+            </div>
+        </div>
+        <div class="canvas-container">
+            <h2>XZ Plane (Perpendicular)</h2>
+            <div class="canvas-wrapper">
+                <canvas id="canvasXZ"></canvas>
+                <canvas id="atomsXZ" class="atom-overlay"></canvas>
+            </div>
+        </div>
+        <div class="controls">
+            <h2>Parameters</h2>
+            
+            <div class="control-group">
+                <label>c_s (s coefficient): <span id="csValue" class="value">0.50</span></label>
+                <input type="range" id="cs" min="-1.0" max="1.0" step="0.01" value="0.5">
+                <div class="info">Range: -1 to 1. Controls s-p mixing</div>
+            </div>
+
+            <div class="control-group">
+                <label>zeta (orbital exponent): <span id="zetaValue" class="value">2.20</span></label>
+                <input type="range" id="zeta" min="0.5" max="5.0" step="0.1" value="2.2">
+                <div class="info">Lower = more diffuse</div>
+            </div>
+
+            <div class="control-group">
+                <label>power (angular): <span id="powerValue" class="value">1</span></label>
+                <input type="range" id="power" min="1" max="10" step="1" value="1">
+                <div class="info">Integer only. Higher = sharper angular function</div>
+            </div>
+
+            <div class="control-group">
+                <label>radial power: <span id="radialPowerValue" class="value">1</span></label>
+                <input type="range" id="radialPower" min="1" max="10" step="1" value="1">
+                <div class="info">Integer only. Higher = pushes density farther from center</div>
+            </div>
+
+            <div class="control-group">
+                <label>scale (contrast): <span id="scaleValue" class="value">1.0</span></label>
+                <input type="range" id="scale" min="0.1" max="5.0" step="0.1" value="1.0">
+                <div class="info">Adjusts overall brightness/saturation</div>
+            </div>
+
+            <div class="control-group">
+                <label>Orbital to plot:</label>
+                <div class="checkbox-group">
+                    <label><input type="radio" name="orbital" value="lp1" checked> LP1</label>
+                    <label><input type="radio" name="orbital" value="lp2"> LP2</label>
+                    <label><input type="radio" name="orbital" value="sum"> Sum (density only)</label>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="checkbox-group">
+                    <label><input type="checkbox" id="clamp"> Clamp negative</label>
+                    <label><input type="checkbox" id="amplitude"> Show amplitude</label>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <label>Color Scale</label>
+                <div class="checkbox-group">
+                    <label><input type="radio" name="colormap" value="magma" checked> Magma</label>
+                    <label><input type="radio" name="colormap" value="diverging"> Diverging</label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebGL setup
+        const canvasXY = document.getElementById('canvasXY');
+        const canvasXZ = document.getElementById('canvasXZ');
+        const atomsXY = document.getElementById('atomsXY');
+        const atomsXZ = document.getElementById('atomsXZ');
+        const glXY = canvasXY.getContext('webgl');
+        const glXZ = canvasXZ.getContext('webgl');
+        const ctxAtomsXY = atomsXY.getContext('2d');
+        const ctxAtomsXZ = atomsXZ.getContext('2d');
+
+        // Atom positions in local frame (from Python script)
+        // O at origin, H atoms at tetrahedral directions
+        const atoms = {
+            O: { x: 0, y: 0, z: 0, color: '#ff4444', radius: 0.15, label: 'O' },
+            H1: { x: 0.612, y: 0.791, z: 0, color: '#ffffff', radius: 0.08, label: 'H' },
+            H2: { x: 0.612, y: -0.791, z: 0, color: '#ffffff', radius: 0.08, label: 'H' }
+        };
+
+        // Coordinate range for display
+        const coordRange = 2.5;
+
+        // Resize canvases
+        function resizeCanvas(canvas) {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+        }
+        resizeCanvas(canvasXY);
+        resizeCanvas(canvasXZ);
+        resizeCanvas(atomsXY);
+        resizeCanvas(atomsXZ);
+
+        // Convert local coordinates to canvas coordinates
+        function localToCanvas(x, y, canvas) {
+            const width = canvas.width;
+            const height = canvas.height;
+            const scale = Math.min(width, height) / (2 * coordRange);
+            const canvasX = width / 2 + x * scale;
+            const canvasY = height / 2 - y * scale; // Flip Y for canvas
+            return { x: canvasX, y: canvasY, scale };
+        }
+
+        // Draw atoms on overlay canvas
+        function drawAtoms(ctx, canvas, plane) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+            const displayWidth = canvas.width / window.devicePixelRatio;
+            const displayHeight = canvas.height / window.devicePixelRatio;
+            const scale = Math.min(displayWidth, displayHeight) / (2 * coordRange);
+
+            // Draw axes
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            // X axis
+            ctx.moveTo(displayWidth / 2, displayHeight / 2);
+            ctx.lineTo(displayWidth / 2 + coordRange * scale, displayHeight / 2);
+            // Y or Z axis
+            ctx.moveTo(displayWidth / 2, displayHeight / 2);
+            ctx.lineTo(displayWidth / 2, displayHeight / 2 - coordRange * scale);
+            ctx.stroke();
+
+            // Draw axis labels
+            ctx.fillStyle = '#888';
+            ctx.font = '12px Arial';
+            ctx.fillText('x', displayWidth / 2 + coordRange * scale + 5, displayHeight / 2 + 4);
+            ctx.fillText(plane === 'XY' ? 'y' : 'z', displayWidth / 2 + 4, displayHeight / 2 - coordRange * scale - 5);
+
+            // Draw atoms
+            for (const [name, atom] of Object.entries(atoms)) {
+                let x, y;
+                if (plane === 'XY') {
+                    x = atom.x;
+                    y = atom.y;
+                } else { // XZ
+                    x = atom.x;
+                    y = atom.z;
+                }
+
+                const pos = localToCanvas(x, y, canvas);
+                const radius = atom.radius * scale;
+
+                // Draw atom circle
+                ctx.beginPath();
+                ctx.arc(pos.x / window.devicePixelRatio, pos.y / window.devicePixelRatio, radius, 0, 2 * Math.PI);
+                ctx.fillStyle = atom.color;
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Draw label
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(atom.label, pos.x / window.devicePixelRatio, pos.y / window.devicePixelRatio);
+            }
+        }
+
+        // Initial atom drawing
+        drawAtoms(ctxAtomsXY, atomsXY, 'XY');
+        drawAtoms(ctxAtomsXZ, atomsXZ, 'XZ');
+
+        // Vertex shader
+        const vsSource = `
+            attribute vec2 a_position;
+            varying vec2 v_uv;
+            void main() {
+                v_uv = a_position * 0.5 + 0.5;
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        `;
+
+        // Fragment shader
+        const fsSource = `
+            precision highp float;
+            varying vec2 v_uv;
+            uniform vec2 u_resolution;
+            uniform float u_cs;
+            uniform float u_zeta;
+            uniform float u_power;
+            uniform float u_radial_power;
+            uniform float u_scale;
+            uniform int u_orbital; // 0=LP1, 1=LP2, 2=sum
+            uniform bool u_clamp;
+            uniform bool u_amplitude;
+            uniform bool u_diverging;
+            uniform vec2 u_plane; // (1,0) for XY, (0,1) for XZ
+
+            // Tetrahedral directions for H2O lone pairs
+            // LP1: [-0.612, 0, 0.791]
+            // LP2: [-0.612, 0, -0.791]
+            const vec3 lp1_dir = vec3(-0.61221728, 0.0, 0.79068957);
+            const vec3 lp2_dir = vec3(-0.61221728, 0.0, -0.79068957);
+
+            float orbital_s(float r, float zeta) {
+                return exp(-zeta * r);
+            }
+
+            float compute_orbital(vec3 pos, vec3 dir, float cs, float zeta, float power, float radial_power) {
+                float r = length(pos) + 0.0001;
+                float s = orbital_s(r, zeta);
+                float cp = sqrt(1.0 - cs * cs);
+                float angular = dot(dir, pos);
+
+                float psi;
+                if (abs(power - 1.0) < 0.01 && abs(radial_power - 1.0) < 0.01) {
+                    psi = cs * s + cp * angular * exp(-zeta * r);
+                } else {
+                    // Angular: (cos_theta)^n, Radial: r^m
+                    // Use abs to avoid pow() issues with negative base, then restore sign
+                    float cos_theta = angular / r;
+                    float sign = sign(cos_theta);
+                    float abs_cos = abs(cos_theta);
+                    float angular_part = sign * pow(abs_cos, power);
+                    float radial_part = pow(r, radial_power);
+                    psi = cs * s + cp * angular_part * radial_part * exp(-zeta * r);
+                }
+                return psi;
+            }
+
+            vec3 colormap_magma(float t) {
+                // Approximate magma colormap
+                vec3 c;
+                t = clamp(t, 0.0, 1.0);
+                if (t < 0.25) {
+                    c = mix(vec3(0.0, 0.0, 0.0), vec3(0.168, 0.0, 0.1), t * 4.0);
+                } else if (t < 0.5) {
+                    c = mix(vec3(0.168, 0.0, 0.1), vec3(0.525, 0.0, 0.35), (t - 0.25) * 4.0);
+                } else if (t < 0.75) {
+                    c = mix(vec3(0.525, 0.0, 0.35), vec3(0.836, 0.24, 0.31), (t - 0.5) * 4.0);
+                } else {
+                    c = mix(vec3(0.836, 0.24, 0.31), vec3(1.0, 0.937, 0.565), (t - 0.75) * 4.0);
+                }
+                return c;
+            }
+
+            vec3 colormap_diverging(float t) {
+                // Red-Blue diverging
+                t = clamp(t, 0.0, 1.0);
+                if (t < 0.5) {
+                    return mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 1.0, 1.0), t * 2.0);
+                } else {
+                    return mix(vec3(1.0, 1.0, 1.0), vec3(1.0, 0.0, 0.0), (t - 0.5) * 2.0);
+                }
+            }
+
+            void main() {
+                // Convert UV to world coordinates (-2.5 to 2.5)
+                vec2 uv = (v_uv - 0.5) * 2.0;
+                vec3 pos;
+                
+                if (u_plane.x > 0.5) {
+                    // XY plane
+                    pos = vec3(uv.x, uv.y, 0.0);
+                } else {
+                    // XZ plane
+                    pos = vec3(uv.x, 0.0, uv.y);
+                }
+                
+                // Compute lone pair orbitals
+                float psi1 = compute_orbital(pos, lp1_dir, u_cs, u_zeta, u_power, u_radial_power);
+                float psi2 = compute_orbital(pos, lp2_dir, u_cs, u_zeta, u_power, u_radial_power);
+
+                float result;
+                if (u_orbital == 0) {
+                    // LP1 only
+                    if (u_clamp) psi1 = max(psi1, 0.0);
+                    result = u_amplitude ? psi1 : psi1 * psi1;
+                } else if (u_orbital == 1) {
+                    // LP2 only
+                    if (u_clamp) psi2 = max(psi2, 0.0);
+                    result = u_amplitude ? psi2 : psi2 * psi2;
+                } else {
+                    // Sum (density only)
+                    if (u_clamp) {
+                        psi1 = max(psi1, 0.0);
+                        psi2 = max(psi2, 0.0);
+                    }
+                    if (u_amplitude) {
+                        result = psi1 + psi2;  // Still allow, but not physically meaningful
+                    } else {
+                        result = psi1 * psi1 + psi2 * psi2;
+                    }
+                }
+                
+                // Normalize for display
+                float t;
+                if (u_amplitude) {
+                    float max_val = 0.5 / u_scale;
+                    t = (result / max_val) * 0.5 + 0.5;
+                } else {
+                    float max_val = 0.1 / u_scale;
+                    t = result / max_val;
+                }
+                
+                vec3 color;
+                if (u_diverging || u_amplitude) {
+                    color = colormap_diverging(t);
+                } else {
+                    color = colormap_magma(t);
+                }
+                
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        // Compile shader
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Create program
+        function createProgram(gl, vsSource, fsSource) {
+            const vs = compileShader(gl, vsSource, gl.VERTEX_SHADER);
+            const fs = compileShader(gl, fsSource, gl.FRAGMENT_SHADER);
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program link error:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            return program;
+        }
+
+        // Setup programs
+        const programXY = createProgram(glXY, vsSource, fsSource);
+        const programXZ = createProgram(glXZ, vsSource, fsSource);
+
+        // Setup geometry (full screen quad)
+        const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+        const positionBuffer = glXY.createBuffer();
+        glXY.bindBuffer(glXY.ARRAY_BUFFER, positionBuffer);
+        glXY.bufferData(glXY.ARRAY_BUFFER, positions, glXY.STATIC_DRAW);
+
+        const positionBufferXZ = glXZ.createBuffer();
+        glXZ.bindBuffer(glXZ.ARRAY_BUFFER, positionBufferXZ);
+        glXZ.bufferData(glXZ.ARRAY_BUFFER, positions, glXZ.STATIC_DRAW);
+
+        // Get locations
+        function setupLocations(gl, program) {
+            return {
+                position: gl.getAttribLocation(program, 'a_position'),
+                resolution: gl.getUniformLocation(program, 'u_resolution'),
+                cs: gl.getUniformLocation(program, 'u_cs'),
+                zeta: gl.getUniformLocation(program, 'u_zeta'),
+                power: gl.getUniformLocation(program, 'u_power'),
+                radial_power: gl.getUniformLocation(program, 'u_radial_power'),
+                scale: gl.getUniformLocation(program, 'u_scale'),
+                orbital: gl.getUniformLocation(program, 'u_orbital'),
+                clamp: gl.getUniformLocation(program, 'u_clamp'),
+                amplitude: gl.getUniformLocation(program, 'u_amplitude'),
+                diverging: gl.getUniformLocation(program, 'u_diverging'),
+                plane: gl.getUniformLocation(program, 'u_plane')
+            };
+        }
+
+        const locXY = setupLocations(glXY, programXY);
+        const locXZ = setupLocations(glXZ, programXZ);
+
+        // Render function
+        function render() {
+            const cs = parseFloat(document.getElementById('cs').value);
+            const zeta = parseFloat(document.getElementById('zeta').value);
+            const power = parseFloat(document.getElementById('power').value);
+            const radialPower = parseFloat(document.getElementById('radialPower').value);
+            const scale = parseFloat(document.getElementById('scale').value);
+            const orbital = document.querySelector('input[name="orbital"]:checked').value;
+            const clamp = document.getElementById('clamp').checked;
+            const amplitude = document.getElementById('amplitude').checked;
+            const diverging = document.querySelector('input[name="colormap"]:checked').value === 'diverging';
+
+            // Map orbital selection to integer
+            let orbitalInt = 0;
+            if (orbital === 'lp1') orbitalInt = 0;
+            else if (orbital === 'lp2') orbitalInt = 1;
+            else orbitalInt = 2; // sum
+
+            // Update value displays
+            document.getElementById('csValue').textContent = cs.toFixed(2);
+            document.getElementById('zetaValue').textContent = zeta.toFixed(2);
+            document.getElementById('powerValue').textContent = Math.round(power);
+            document.getElementById('radialPowerValue').textContent = Math.round(radialPower);
+            document.getElementById('scaleValue').textContent = scale.toFixed(1);
+
+            // Render XY
+            glXY.viewport(0, 0, canvasXY.width, canvasXY.height);
+            glXY.useProgram(programXY);
+            glXY.bindBuffer(glXY.ARRAY_BUFFER, positionBuffer);
+            glXY.enableVertexAttribArray(locXY.position);
+            glXY.vertexAttribPointer(locXY.position, 2, glXY.FLOAT, false, 0, 0);
+            glXY.uniform2f(locXY.resolution, canvasXY.width, canvasXY.height);
+            glXY.uniform1f(locXY.cs, cs);
+            glXY.uniform1f(locXY.zeta, zeta);
+            glXY.uniform1f(locXY.power, power);
+            glXY.uniform1f(locXY.radial_power, radialPower);
+            glXY.uniform1f(locXY.scale, scale);
+            glXY.uniform1i(locXY.orbital, orbitalInt);
+            glXY.uniform1i(locXY.clamp, clamp ? 1 : 0);
+            glXY.uniform1i(locXY.amplitude, amplitude ? 1 : 0);
+            glXY.uniform1i(locXY.diverging, diverging ? 1 : 0);
+            glXY.uniform2f(locXY.plane, 1.0, 0.0);
+            glXY.drawArrays(glXY.TRIANGLE_STRIP, 0, 4);
+
+            // Render XZ
+            glXZ.viewport(0, 0, canvasXZ.width, canvasXZ.height);
+            glXZ.useProgram(programXZ);
+            glXZ.bindBuffer(glXZ.ARRAY_BUFFER, positionBufferXZ);
+            glXZ.enableVertexAttribArray(locXZ.position);
+            glXZ.vertexAttribPointer(locXZ.position, 2, glXZ.FLOAT, false, 0, 0);
+            glXZ.uniform2f(locXZ.resolution, canvasXZ.width, canvasXZ.height);
+            glXZ.uniform1f(locXZ.cs, cs);
+            glXZ.uniform1f(locXZ.zeta, zeta);
+            glXZ.uniform1f(locXZ.power, power);
+            glXZ.uniform1f(locXZ.radial_power, radialPower);
+            glXZ.uniform1f(locXZ.scale, scale);
+            glXZ.uniform1i(locXZ.orbital, orbitalInt);
+            glXZ.uniform1i(locXZ.clamp, clamp ? 1 : 0);
+            glXZ.uniform1i(locXZ.amplitude, amplitude ? 1 : 0);
+            glXZ.uniform1i(locXZ.diverging, diverging ? 1 : 0);
+            glXZ.uniform2f(locXZ.plane, 0.0, 1.0);
+            glXZ.drawArrays(glXZ.TRIANGLE_STRIP, 0, 4);
+        }
+
+        // Event listeners
+        document.getElementById('cs').addEventListener('input', render);
+        document.getElementById('zeta').addEventListener('input', render);
+        document.getElementById('power').addEventListener('input', render);
+        document.getElementById('radialPower').addEventListener('input', render);
+        document.getElementById('scale').addEventListener('input', render);
+        document.querySelectorAll('input[name="orbital"]').forEach(r => {
+            r.addEventListener('change', render);
+        });
+        document.getElementById('clamp').addEventListener('change', render);
+        document.getElementById('amplitude').addEventListener('change', render);
+        document.querySelectorAll('input[name="colormap"]').forEach(r => {
+            r.addEventListener('change', render);
+        });
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            resizeCanvas(canvasXY);
+            resizeCanvas(canvasXZ);
+            resizeCanvas(atomsXY);
+            resizeCanvas(atomsXZ);
+            drawAtoms(ctxAtomsXY, atomsXY, 'XY');
+            drawAtoms(ctxAtomsXZ, atomsXZ, 'XZ');
+            render();
+        });
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>

@@ -85,3 +85,9 @@ Testing/
 # Large reference data files (not versioned)
 tests/tFitREQ/wb97m_input/
 tests/tFitREQ/wb97m_output/
+
+# Generated images and plots
+*.png
+*.jpg
+*.jpeg
+*.svg
