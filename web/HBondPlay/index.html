@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HBondPlay - Fragment Interaction Viewer</title>
+    <link rel="stylesheet" href="style.css">
+    <script id="vs" type="x-shader/x-vertex">
+        #version 300 es
+        in vec2 a_position;
+        out vec2 v_uv;
+        void main() {
+            v_uv = a_position * 0.5 + 0.5;
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+</head>
+<body>
+    <h1>HBondPlay - Inter-Fragment Interaction Energy</h1>
+    <div class="container">
+        <div class="canvas-container">
+            <h2>Angle (x) vs Distance (y)</h2>
+            <div class="canvas-wrapper">
+                <canvas id="canvasGL"></canvas>
+                <canvas id="overlay" class="atom-overlay"></canvas>
+            </div>
+            <canvas id="lineProfile" class="line-profile"></canvas>
+        </div>
+        <div class="controls">
+            <h2>Settings</h2>
+
+            <div class="control-group">
+                <label>Fragment 1 (fixed)</label>
+                <select id="frag1Select"></select>
+                <label style="margin-top:6px">Pivot atom</label>
+                <select id="pivotSelect"></select>
+                <label style="margin-top:6px">Projection</label>
+                <select id="projSelect">
+                    <option value="xy">XY (z out of screen)</option>
+                    <option value="xz">XZ (y out of screen)</option>
+                    <option value="yz">YZ (x out of screen)</option>
+                    <option value="zy">ZY (x out of screen)</option>
+                </select>
+                <label style="margin-top:6px"><input type="checkbox" id="addEpair"> Add e-pairs</label>
+                <label style="margin-top:4px">Lp dist: <span class="value-display" id="lpDistVal">0.70</span> Å</label>
+                <input type="range" id="lpDist" min="0.3" max="1.5" step="0.05" value="0.70">
+            </div>
+
+            <div class="control-group">
+                <label>Fragment 2 (mobile)</label>
+                <select id="frag2Select"></select>
+            </div>
+
+            <div class="control-group">
+                <label>Mode</label>
+                <div class="checkbox-group">
+                    <label><input type="radio" name="mode" value="polar"> Polar</label>
+                    <label><input type="radio" name="mode" value="cartesian" checked> Cartesian</label>
+                </div>
+                <label style="margin-top:6px">Cartesian half-range (Å): <span class="value-display" id="cartVal">6.0</span></label>
+                <input type="range" id="cartRange" min="0.5" max="10.0" step="0.1" value="6.0">
+            </div>
+
+            <div class="control-group">
+                <h3>Scan Range</h3>
+                <label>Angle range (deg): <span class="value-display" id="angleVal"></span></label>
+                <div class="range-row">
+                    <input type="number" id="angleMin" value="-180" step="1">
+                    <span>to</span>
+                    <input type="number" id="angleMax" value="180" step="1">
+                </div>
+                <label>Distance range (Å): <span class="value-display" id="distVal"></span></label>
+                <div class="range-row">
+                    <input type="number" id="distMin" value="0.5" step="0.1">
+                    <span>to</span>
+                    <input type="number" id="distMax" value="10.0" step="0.1">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>Energy Terms</h3>
+                <div class="checkbox-group">
+                    <label><input type="checkbox" id="maskPauli" checked> Pauli</label>
+                    <label><input type="checkbox" id="maskLondon" checked> London</label>
+                    <label><input type="checkbox" id="maskCoulomb" checked> Coulomb</label>
+                    <label><input type="checkbox" id="maskHB"> HB corr</label>
+                </div>
+                <label style="margin-top:6px">Morse b (Å<sup>-1</sup>): <span class="value-display" id="bVal">3.0</span></label>
+                <input type="range" id="bParam" min="1.0" max="8.0" step="0.1" value="3.0">
+            </div>
+
+            <div class="control-group">
+                <h3>Color Scale (kcal/mol)</h3>
+                <label>Colormap</label>
+                <select id="colormapSelect"></select>
+                <label style="margin-top:6px">Energy range: ±<span class="value-display" id="vmaxVal">20</span> kcal/mol</label>
+                <input type="range" id="vmax" min="1" max="200" step="1" value="20">
+                <label style="margin-top:4px"><input type="checkbox" id="autoRange" checked> Auto range</label>
+            </div>
+
+            <div class="control-group">
+                <h3>Fragment 1 Parameters</h3>
+                <button id="btnQEq1" class="qeq-btn">Compute QEq Charges</button>
+                <div id="frag1Table"></div>
+            </div>
+
+            <div class="control-group">
+                <h3>Fragment 2 Parameters</h3>
+                <button id="btnQEq2" class="qeq-btn">Compute QEq Charges</button>
+                <div id="frag2Table"></div>
+            </div>
+        </div>
+    </div>
+    <script src="molecule.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
